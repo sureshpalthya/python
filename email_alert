@@ -1,0 +1,129 @@
+#!/usr/bin/python
+import re
+import logging
+import configparser
+import time
+import sys
+import subprocess
+from datetime import datetime
+
+class HivePOC:
+    """
+    This Class will perform the poc on Hive, which will execute hive queries and hive scripts.
+    """
+    def __init__(self):
+        """
+        This constructor will read the conf from hivepoc conf file
+        """
+        self.config=configparser.ConfigParser()
+
+        #Reading configuration from conf file
+
+        self.config_file = "/home/spicons/poc_hive/conf/hive_poc_properties.props"
+        self.config.read(self.config_file)
+        self.hivepoc_logs_dir = self.config.get('HIVEPOC','hivepoc.log.dir')
+
+        #HADOOP CONFIGURATION
+        self.hive_ingestion_database = self.config.get('HADOOP','hivepoc.ingetion.database')
+        self.hivepoc_cntl_database = self.config.get('HADOOP','hivepoc.cntl.database')
+        self.hivepoc_cntl_table = self.config.get('HADOOP','hivepoc.cntl.table')
+        self.hivepoc_hiveserver = self.config.get('HADOOP','hivepoc.hive.server2')
+        self.hivepoc_hive_port = self.config.get('HADOOP','hivepoc.hive.port')
+        self.hivepoc_hive_prinicipal = self.config.get('HADOOP','hivepoc.hive.prinicipal')
+        self.hivepoc_pdl = self.config.get('HADOOP','hivepoc.pdl')
+
+        self.log_error_name = str(self.hivepoc_logs_dir)+"error"+".log"
+        self.error_log = open(self.log_error_name,"w+")
+
+        self.logger = logging.getLogger("HIVEPOC")
+        self.logger.setLevel(logging.DEBUG)
+        self.log_file_name = str(self.hivepoc_logs_dir)+"hivepoc"+"_"+"debug"+".log"
+        self.fh = logging.FileHandler(self.log_file_name)
+        self.formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        self.fh.setFormatter(self.formatter)
+        self.logger.addHandler(self.fh)
+
+    def execute_hive_scripts_and_queries(self,script_path,query,hiveserver2,port,prinicipal):
+        """
+        This method is will copy the data from local dir to hdfs
+        """
+        self.logger.info("in ProspectHadoopProcessing class,in execute_hive_scripts")
+        self.logger.info("executing script:%s"%script_path)
+        command = "jdbc:hive2://%s:%s/;principal=%s"%(hiveserver2,port,prinicipal)
+        if (script_path !=""):
+            query_exec = "beeline --silent=true --outputformat=csv2 -u \"%s\" -f %s"%(command,script_path)
+        elif (query!=""):
+            query_exec = "beeline -u \"%s\" -e \"%s\""%(command,query)
+        status,output = subprocess.getstatusoutput(query_exec)
+        print(output)
+        if (status == 0):
+            self.logger.info("executed script:%s successfully"%script_path)
+        else:
+            self.logger.debug("executed script,Loading to Hadoop:%s failed"%query_exec)
+            self.error_log.write("FLE001:executed script,Loading to Hadoop:%s failed"%query_exec)
+          
+            self.error_log.close()
+            self.send_mail()
+            time.sleep(1)
+            sys.exit(1)
+
+    def hivepoc_start(self):
+        """
+        This method is starting point for hivepoc
+        """
+        self.logger.info("Starting point of HivePOC")
+        current_time = datetime.now()
+        date_string = current_time.strftime("%m-%d-%Y")
+        #correct database
+        #database = "test_db"
+
+        #incorrect database for testing
+        database = "test_db123"
+        table = "hive_test2"
+        self.start_query = "set tez.queue.name=dca;select count(*) from %s.%s"%(database,table)
+        hivePoc.execute_hive_scripts_and_queries("",self.start_query,self.hivepoc_hiveserver,self.hivepoc_hive_port,self.hivepoc_hive_prinicipal)  
+
+    def send_mail(self):
+        """
+        This method will send a mail.
+        """
+        sendFrom = "hivepoc@sprint.com";
+        mail_cmd = "mail -s "+"\"HIVE POC STATUS\"" + " -r" " \"" ;
+        mail_cmd = mail_cmd + sendFrom;
+        mail_cmd = mail_cmd + "\"";
+        mail_cmd = mail_cmd + "  \"";
+        mail_cmd = mail_cmd + self.hivepoc_pdl;
+        mail_cmd = mail_cmd + "\"" + " < ";
+        mail_cmd = mail_cmd + "%s"%self.error_log;
+        status,output = subprocess.getstatusoutput(mail_cmd)
+        if (status == 0):
+           self.logger.info("Hive POC succedded,Informed to team")
+        else:
+           self.logger.debug("Hive POC failed failed")
+if __name__ == '__main__':
+     """
+     Starting point of the project.
+     """
+     hivePoc = HivePOC()
+     hivePoc.hivepoc_start()
+     
+     
+     
+     
+     
+     ###############################
+     
+     [HIVEPOC]
+hivepoc.log.dir=/home//poc_hive/logs/
+hivepoc.conf.dir=/home//poc_hive/conf/hive_poc_properties.props
+
+[HADOOP]
+hivepoc.ingetion.database=prospect_ingst
+hivepoc.cntl.database=0bq_cntl
+hivepoc.cntl.table=prospect_cntl
+hivepoc.hive.server2= 
+hivepoc.hive.port=10000
+hivepoc.hive.prinicipal= 
+hivepoc.pdl= 
+
+##################
